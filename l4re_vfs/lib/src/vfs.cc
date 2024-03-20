@@ -30,7 +30,7 @@ load_module(char const *)
 }
 
 #include <l4/l4re_vfs/impl/ns_fs_impl.h>
-#include <l4/l4re_vfs/impl/ro_file_impl.h>
+#include <l4/l4re_vfs/impl/ds_file_impl.h>
 #include <l4/l4re_vfs/impl/fd_store_impl.h>
 #include <l4/l4re_vfs/impl/vcon_stream_impl.h>
 #include <l4/l4re_vfs/impl/vfs_impl.h>
