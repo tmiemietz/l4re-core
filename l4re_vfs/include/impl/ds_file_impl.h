@@ -6,7 +6,7 @@
  * License: see LICENSE.spdx (in this directory or the directories above)
  */
 
-#include "ro_file.h"
+#include "ds_file.h"
 
 #include <sys/ioctl.h>
 
@@ -14,7 +14,7 @@
 
 namespace L4Re { namespace Core {
 
-Ro_file::~Ro_file() noexcept
+Ds_file::~Ds_file() noexcept
 {
   if (_addr)
     L4Re::Env::env()->rm()->detach(l4_addr_t(_addr), 0);
@@ -23,7 +23,7 @@ Ro_file::~Ro_file() noexcept
 }
 
 int
-Ro_file::fstat(struct stat64 *buf) const noexcept
+Ds_file::fstat(struct stat64 *buf) const noexcept
 {
   static int fake = 0;
 
@@ -38,7 +38,7 @@ Ro_file::fstat(struct stat64 *buf) const noexcept
 }
 
 ssize_t
-Ro_file::read_single(const struct iovec *vec, off64_t pos) noexcept
+Ds_file::read_single(const struct iovec *vec, off64_t pos) noexcept
 {
   off64_t l = vec->iov_len;
   if (_size - pos < l)
@@ -54,7 +54,7 @@ Ro_file::read_single(const struct iovec *vec, off64_t pos) noexcept
 }
 
 ssize_t
-Ro_file::preadv(const struct iovec *vec, int cnt, off64_t offset) noexcept
+Ds_file::preadv(const struct iovec *vec, int cnt, off64_t offset) noexcept
 {
   if (!_size)
     return 0;
@@ -99,7 +99,7 @@ Ro_file::preadv(const struct iovec *vec, int cnt, off64_t offset) noexcept
 }
 
 ssize_t
-Ro_file::write_single(const struct iovec *vec, off64_t pos) noexcept
+Ds_file::write_single(const struct iovec *vec, off64_t pos) noexcept
 {
   // POSIX declares write operations with a length > SSIZE_MAX to not be
   // portable, so we do not have to support them. This check also ensures that
@@ -125,7 +125,7 @@ Ro_file::write_single(const struct iovec *vec, off64_t pos) noexcept
 }
 
 ssize_t
-Ro_file::pwritev(const struct iovec *vec, int cnt, off64_t offset) noexcept
+Ds_file::pwritev(const struct iovec *vec, int cnt, off64_t offset) noexcept
 {
   if (cnt < 0 || offset < 0)
     return -EINVAL;
@@ -173,7 +173,7 @@ Ro_file::pwritev(const struct iovec *vec, int cnt, off64_t offset) noexcept
 }
 
 int
-Ro_file::ioctl(unsigned long v, va_list args) noexcept
+Ds_file::ioctl(unsigned long v, va_list args) noexcept
 {
   switch (v)
     {

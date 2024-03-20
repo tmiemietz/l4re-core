@@ -11,7 +11,10 @@
 
 namespace L4Re { namespace Core {
 
-class Ro_file : public L4Re::Vfs::Be_file_pos
+/**
+ * Implementation for files backed by an L4Re::Dataspace abstraction.
+ */
+class Ds_file : public L4Re::Vfs::Be_file_pos
 {
 private:
   L4::Cap<L4Re::Dataspace> _ds;
@@ -21,7 +24,7 @@ private:
   bool _writable;                    // Is this file writable?
 
 public:
-  explicit Ro_file(L4::Cap<L4Re::Dataspace> ds) noexcept
+  explicit Ds_file(L4::Cap<L4Re::Dataspace> ds) noexcept
   : Be_file_pos(), _ds(ds), _addr(0)
   {
     L4Re::Dataspace::Stats ds_stats{};      // Properties of backing dataspace
@@ -69,7 +72,7 @@ public:
     return false;
   }
 
-  ~Ro_file() noexcept;
+  ~Ds_file() noexcept;
 
 private:
   ssize_t read_single(const struct iovec*, off64_t) noexcept;
