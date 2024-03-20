@@ -16,13 +16,22 @@ class Ro_file : public L4Re::Vfs::Be_file_pos
 private:
   L4::Cap<L4Re::Dataspace> _ds;
   off64_t _size;
-  char const *_addr;
+  char *_addr;
+
+  bool _writable;                    // Is this file writable?
 
 public:
   explicit Ro_file(L4::Cap<L4Re::Dataspace> ds) noexcept
   : Be_file_pos(), _ds(ds), _addr(0)
   {
-    _size = _ds->size();
+    L4Re::Dataspace::Stats ds_stats{};      // Properties of backing dataspace
+
+    // Use a single IPC to query backing dataspace for size and permissions
+    _ds->info(&ds_stats);
+    _size = ds_stats.size;
+
+    // w() returns true if flags has the write permission bit set
+    _writable = ds_stats.flags.w();
   }
 
   L4::Cap<L4Re::Dataspace> data_space() noexcept override { return _ds; }
@@ -42,21 +51,30 @@ public:
   /**
    * Check whether the file is ready for an I/O operation/condition.
    *
-   * By definition, the read-only file is always ready for reading and not
-   * ready for other I/O operations/conditions.
+   * By definition, a dataspace-backed file is always ready for reading. If
+   * the file has write permissions, it is also always ready for writing.
    *
    * \param rt  Type of the I/O operation/condition to be ready.
    *
    * \return Always true for reading, always false otherwise.
    */
   bool check_ready(Ready_type rt) noexcept override
-  { return rt == Read; }
+  {
+    if (rt == Read)
+      return true;
+
+    if (rt == Write)
+      return _writable;
+
+    return false;
+  }
 
   ~Ro_file() noexcept;
 
 private:
   ssize_t read_single(const struct iovec*, off64_t) noexcept;
   ssize_t preadv(const struct iovec *, int, off64_t) noexcept override;
+  ssize_t write_single(const struct iovec*, off64_t) noexcept;
   ssize_t pwritev(const struct iovec *, int , off64_t) noexcept override;
 };
 

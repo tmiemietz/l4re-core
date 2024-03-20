@@ -61,15 +61,24 @@ Ro_file::preadv(const struct iovec *vec, int cnt, off64_t offset) noexcept
 
   if (!_addr)
     {
-      void const *file = reinterpret_cast<void*>(L4_PAGESIZE);
-      long err = L4Re::Env::env()->rm()->attach(&file, _size,
-                                                Rm::F::Search_addr | Rm::F::R,
-                                                _ds, 0);
+      // Region manager flags and dataspace cap need to be adjusted according
+      // to file permissions
+      Rm::Flags rm_flags = Rm::F::Search_addr | Rm::F::R;
+      L4::Ipc::Cap<L4Re::Dataspace> ds_cap = _ds;
+      if (_writable)
+        {
+          rm_flags |= Rm::F::W;
+          ds_cap = L4::Ipc::make_cap_rw(_ds);
+        }
+
+      void *file = reinterpret_cast<void*>(L4_PAGESIZE);
+      long err = L4Re::Env::env()->rm()->attach(&file, _size, rm_flags,
+                                                ds_cap, 0);
 
       if (err < 0)
         return err;
 
-      _addr = static_cast<char const *>(file);
+      _addr = static_cast<char *>(file);
     }
 
   ssize_t l = 0;
@@ -90,9 +99,77 @@ Ro_file::preadv(const struct iovec *vec, int cnt, off64_t offset) noexcept
 }
 
 ssize_t
-Ro_file::pwritev(const struct iovec *, int, off64_t) noexcept
+Ro_file::write_single(const struct iovec *vec, off64_t pos) noexcept
 {
-  return -EROFS;
+  // POSIX declares write operations with a length > SSIZE_MAX to not be
+  // portable, so we do not have to support them. This check also ensures that
+  // casting the size_t variable vec->iov_len to an ssize_t does not overflow.
+  if (vec->iov_len > SSIZE_MAX)
+    return -EINVAL;
+
+  // The memcpy should never result in invalid memory accesses! Therefore,
+  // check for overflow, potentially performing a short write.
+  off64_t l = vec->iov_len;
+  if (_size - pos < l)
+    l = _size - pos;
+
+  if (l > 0)
+    {
+      Vfs_config::memcpy(_addr + pos, vec->iov_base, l);
+      return l;
+    }
+
+  // The write operation would happen entirely beyond EOF. For now, we cannot
+  // extend the file, so return an appropriate error code.
+  return -ENOSPC;
+}
+
+ssize_t
+Ro_file::pwritev(const struct iovec *vec, int cnt, off64_t offset) noexcept
+{
+  if (cnt < 0 || offset < 0)
+    return -EINVAL;
+
+  if (! _writable)
+    return -EBADF;
+
+  // Create a mapping if none is established yet
+  if (! _addr)
+    {
+      void *file = reinterpret_cast<void*>(L4_PAGESIZE);
+      long err = L4Re::Env::env()->rm()->attach(&file, _size,
+                                                Rm::F::Search_addr | Rm::F::RW,
+                                                L4::Ipc::make_cap_rw(_ds), 0);
+
+      if (err < 0)
+        return err;
+
+      _addr = static_cast<char *>(file);
+    }
+
+  // Copy loop, iterating over all I/O vectors
+  ssize_t l = 0;                        // No. of bytes copied so far
+  while (cnt > 0)
+    {
+      ssize_t r = write_single(vec, offset);
+
+      // This check also ensures that casting r to a size_t does not cause
+      // overflows if r is negative.
+      if (r < 0)
+        return (l == 0) ? r : l;
+
+      offset += r;
+      l      += r;
+
+      // Check for short writes
+      if (static_cast<size_t>(r) < vec->iov_len)
+        return l;
+
+      ++vec;
+      --cnt;
+    }
+
+  return l;
 }
 
 int
