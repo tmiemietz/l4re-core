@@ -7,7 +7,6 @@
 #include <l4/util/util.h>
 
 #include <l4/cxx/iostream>
-#include <l4/cxx/list_alloc>
 #include <l4/cxx/exceptions>
 #include <l4/sys/kdebug.h>
 #include "page_alloc.h"
@@ -19,7 +18,15 @@ enum { page_alloc_debug = 0 };
 unsigned page_alloc_debug = 0;
 #endif
 
-class LA : public cxx::List_alloc
+#ifdef CONFIG_MOE_PAGE_ALLOC_TREE
+#include <l4/cxx/tree_alloc>
+using Page_alloc = cxx::Tree_alloc;
+#else
+#include <l4/cxx/list_alloc>
+using Page_alloc = cxx::List_alloc;
+#endif
+
+class LA : public Page_alloc
 {
 #if 0
 public:

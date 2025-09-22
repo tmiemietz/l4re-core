@@ -23,6 +23,7 @@ EXTRA_TARGET := \
   static_vector \
   std_alloc   \
   std_ops     \
+  tree_alloc  \
   type_traits \
   type_list \
   bitfield \
