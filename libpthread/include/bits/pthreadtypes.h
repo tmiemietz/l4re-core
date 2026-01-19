@@ -89,6 +89,11 @@ typedef struct
 /* Keys for thread-specific data */
 typedef unsigned int pthread_key_t;
 
+struct _pthread_pi_fastlock
+{
+  unsigned long *status;
+  l4_cap_idx_t pi_mutex;
+};
 
 /* Mutexes (not abstract because of PTHREAD_MUTEX_INITIALIZER).  */
 /* (The layout is unnatural to maintain binary compatibility
@@ -98,8 +103,12 @@ typedef struct
   int __m_reserved;               /* Reserved for future use */
   int __m_count;                  /* Depth of recursive locking */
   _pthread_descr __m_owner;       /* Owner thread (if recursive or errcheck) */
-  int __m_kind;                   /* Mutex kind: fast, recursive or errcheck */
-  struct _pthread_fastlock __m_lock; /* Underlying fast lock */
+  short __m_kind;                 /* Mutex kind: fast, recursive or errcheck */
+  short __m_protocol;             /* Mutex protocol: none or inherit */
+  union {
+    struct _pthread_fastlock __m_lock; /* Underlying fast lock */
+    struct _pthread_pi_fastlock __m_pi_lock;
+  };
 } pthread_mutex_t;
 
 
@@ -107,6 +116,7 @@ typedef struct
 typedef struct
 {
   int __mutexkind;
+  int __mutexprotocol;
 } pthread_mutexattr_t;
 
 

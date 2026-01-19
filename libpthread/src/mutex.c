@@ -20,23 +20,71 @@
 #include <limits.h>
 #include "pthread.h"
 #include "internals.h"
+#include "pi_mutex_mem.h"
 #include "spinlock.h"
 #include "queue.h"
 #include "restart.h"
 
+#include <l4/re/c/util/cap_alloc.h>
+#include <l4/re/env.h>
 #include <l4/sys/compiler.h>
+#include <l4/sys/factory.h>
 
 int
 L4_HIDDEN
 __pthread_mutex_init(pthread_mutex_t * mutex,
-                       const pthread_mutexattr_t * mutex_attr)
+                     const pthread_mutexattr_t * mutex_attr)
 {
-  __pthread_init_lock(&mutex->__m_lock);
   mutex->__m_kind =
     mutex_attr == NULL ? PTHREAD_MUTEX_TIMED_NP : mutex_attr->__mutexkind;
+  mutex->__m_protocol  =
+    mutex_attr == NULL ? PTHREAD_PRIO_NONE : mutex_attr->__mutexprotocol;
   mutex->__m_count = 0;
   mutex->__m_owner = NULL;
-  return 0;
+
+  if(mutex->__m_protocol == PTHREAD_PRIO_NONE)
+    {
+      __pthread_init_lock(&mutex->__m_lock);
+      return 0;
+    }
+
+  if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+    {
+      mutex->__m_pi_lock.pi_mutex = L4_INVALID_CAP;
+      mutex->__m_pi_lock.status = __pthread_alloc_pi_mutex_kumem_slot();
+      if (!mutex->__m_pi_lock.status)
+        return ENOMEM;
+      *mutex->__m_pi_lock.status = 0;
+
+      mutex->__m_pi_lock.pi_mutex = l4re_util_cap_alloc();
+      if (l4_is_invalid_cap(mutex->__m_pi_lock.pi_mutex))
+        {
+          __pthread_free_pi_mutex_kumem_slot(mutex->__m_pi_lock.status);
+          mutex->__m_pi_lock.status = NULL;
+          return ENOMEM;
+        }
+
+      int err = l4_error(l4_factory_create_pi_mutex(
+        l4re_env()->factory, mutex->__m_pi_lock.pi_mutex,
+        (l4_addr_t)mutex->__m_pi_lock.status, L4RE_THIS_TASK_CAP));
+      if (err < 0)
+        {
+          l4re_util_cap_free(mutex->__m_pi_lock.pi_mutex);
+          mutex->__m_pi_lock.pi_mutex = L4_INVALID_CAP;
+          __pthread_free_pi_mutex_kumem_slot(mutex->__m_pi_lock.status);
+          mutex->__m_pi_lock.status = NULL;
+
+          switch (err)
+            {
+            case -L4_ENOMEM: return ENOMEM;
+            case -L4_EPERM: return EPERM;
+            default: return -err;
+            }
+        }
+      return 0;
+    }
+
+  return EINVAL;
 }
 L4_STRONG_ALIAS(__pthread_mutex_init, pthread_mutex_init)
 
@@ -44,6 +92,27 @@ int
 L4_HIDDEN
 __pthread_mutex_destroy(pthread_mutex_t * mutex)
 {
+  if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+    {
+      if (mutex->__m_pi_lock.status == NULL)
+        // Mutex not initialized.
+        return 0;
+
+      if (*mutex->__m_pi_lock.status != 0)
+        // Mutex still in use.
+        return EBUSY;
+
+      // Free kernel mutex object
+      l4re_util_cap_free_um(mutex->__m_pi_lock.pi_mutex);
+      mutex->__m_pi_lock.pi_mutex = L4_INVALID_CAP;
+
+      // Free kumem slot
+      __pthread_free_pi_mutex_kumem_slot(mutex->__m_pi_lock.status);
+      mutex->__m_pi_lock.status = NULL;
+
+      return 0;
+    }
+
   switch (mutex->__m_kind) {
   case PTHREAD_MUTEX_ADAPTIVE_NP:
   case PTHREAD_MUTEX_RECURSIVE_NP:
@@ -70,29 +139,45 @@ __pthread_mutex_trylock(pthread_mutex_t * mutex)
 
   switch(mutex->__m_kind) {
   case PTHREAD_MUTEX_ADAPTIVE_NP:
-    retcode = __pthread_trylock(&mutex->__m_lock);
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      retcode = __pthread_trylock_pi(&mutex->__m_pi_lock, thread_self());
+    else
+      retcode = __pthread_trylock(&mutex->__m_lock);
     return retcode;
+
   case PTHREAD_MUTEX_RECURSIVE_NP:
     self = thread_self();
     if (mutex->__m_owner == self) {
       mutex->__m_count++;
       return 0;
     }
-    retcode = __pthread_trylock(&mutex->__m_lock);
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      retcode = __pthread_trylock_pi(&mutex->__m_pi_lock, self);
+    else
+      retcode = __pthread_trylock(&mutex->__m_lock);
     if (retcode == 0) {
       mutex->__m_owner = self;
       mutex->__m_count = 0;
     }
     return retcode;
+
   case PTHREAD_MUTEX_ERRORCHECK_NP:
-    retcode = __pthread_alt_trylock(&mutex->__m_lock);
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      retcode = __pthread_trylock_pi(&mutex->__m_pi_lock, thread_self());
+    else
+      retcode = __pthread_alt_trylock(&mutex->__m_lock);
     if (retcode == 0) {
       mutex->__m_owner = thread_self();
     }
     return retcode;
+
   case PTHREAD_MUTEX_TIMED_NP:
-    retcode = __pthread_alt_trylock(&mutex->__m_lock);
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      retcode = __pthread_trylock_pi(&mutex->__m_pi_lock, thread_self());
+    else
+      retcode = __pthread_alt_trylock(&mutex->__m_lock);
     return retcode;
+
   default:
     return EINVAL;
   }
@@ -105,29 +190,50 @@ __pthread_mutex_lock(pthread_mutex_t * mutex)
 {
   pthread_descr self;
 
+  int res = 0;
   switch(mutex->__m_kind) {
   case PTHREAD_MUTEX_ADAPTIVE_NP:
-    __pthread_lock(&mutex->__m_lock, NULL);
-    return 0;
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      res = __pthread_lock_pi_deadlock(&mutex->__m_pi_lock, thread_self());
+    else
+      __pthread_lock(&mutex->__m_lock, NULL);
+    return res;
+
   case PTHREAD_MUTEX_RECURSIVE_NP:
     self = thread_self();
     if (mutex->__m_owner == self) {
       mutex->__m_count++;
       return 0;
     }
-    __pthread_lock(&mutex->__m_lock, self);
-    mutex->__m_owner = self;
-    mutex->__m_count = 0;
-    return 0;
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      res = __pthread_lock_pi_deadlock(&mutex->__m_pi_lock, self);
+    else
+      __pthread_lock(&mutex->__m_lock, self);
+    if (res == 0)
+      {
+        mutex->__m_owner = self;
+        mutex->__m_count = 0;
+      }
+    return res;
+
   case PTHREAD_MUTEX_ERRORCHECK_NP:
     self = thread_self();
     if (mutex->__m_owner == self) return EDEADLK;
-    __pthread_alt_lock(&mutex->__m_lock, self);
-    mutex->__m_owner = self;
-    return 0;
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      res = __pthread_lock_pi(&mutex->__m_pi_lock, self);
+    else
+      __pthread_alt_lock(&mutex->__m_lock, self);
+    if (res == 0)
+      mutex->__m_owner = self;
+    return res;
+
   case PTHREAD_MUTEX_TIMED_NP:
-    __pthread_alt_lock(&mutex->__m_lock, NULL);
-    return 0;
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      res = __pthread_lock_pi_deadlock(&mutex->__m_pi_lock, thread_self());
+    else
+      __pthread_alt_lock(&mutex->__m_lock, NULL);
+    return res;
+
   default:
     return EINVAL;
   }
@@ -142,7 +248,7 @@ __pthread_mutex_timedlock (pthread_mutex_t *mutex,
 			       const struct timespec *abstime)
 {
   pthread_descr self;
-  int res;
+  int res = 0;
 
   if (__builtin_expect (abstime->tv_nsec, 0) < 0
       || __builtin_expect (abstime->tv_nsec, 0) >= 1000000000)
@@ -150,32 +256,62 @@ __pthread_mutex_timedlock (pthread_mutex_t *mutex,
 
   switch(mutex->__m_kind) {
   case PTHREAD_MUTEX_ADAPTIVE_NP:
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      return __pthread_timedlock_pi_deadlock(&mutex->__m_pi_lock, thread_self(),
+                                             abstime);
+
     __pthread_lock(&mutex->__m_lock, NULL);
     return 0;
+
   case PTHREAD_MUTEX_RECURSIVE_NP:
     self = thread_self();
     if (mutex->__m_owner == self) {
       mutex->__m_count++;
       return 0;
     }
-    __pthread_lock(&mutex->__m_lock, self);
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+    {
+      res = __pthread_timedlock_pi_deadlock(&mutex->__m_pi_lock, thread_self(),
+                                            abstime);
+      if (res != 0)
+        return res;
+    }
+    else
+      __pthread_lock(&mutex->__m_lock, self);
+
     mutex->__m_owner = self;
     mutex->__m_count = 0;
     return 0;
+
   case PTHREAD_MUTEX_ERRORCHECK_NP:
     self = thread_self();
     if (mutex->__m_owner == self) return EDEADLK;
-    res = __pthread_alt_timedlock(&mutex->__m_lock, self, abstime);
-    if (res != 0)
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
       {
-	mutex->__m_owner = self;
-	return 0;
+        res =
+          __pthread_timedlock_pi(&mutex->__m_pi_lock, thread_self(), abstime);
+        if (res != 0)
+          return res;
       }
-    return ETIMEDOUT;
+    else
+      {
+        res = __pthread_alt_timedlock(&mutex->__m_lock, self, abstime);
+        if (res == 0)
+          return ETIMEDOUT;
+      }
+
+    mutex->__m_owner = self;
+    return 0;
+
   case PTHREAD_MUTEX_TIMED_NP:
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      return __pthread_timedlock_pi_deadlock(&mutex->__m_pi_lock, thread_self(),
+                                             abstime);
+
     /* Only this type supports timed out lock. */
     return (__pthread_alt_timedlock(&mutex->__m_lock, NULL, abstime)
 	    ? 0 : ETIMEDOUT);
+
   default:
     return EINVAL;
   }
@@ -186,10 +322,15 @@ int
 L4_HIDDEN
 __pthread_mutex_unlock(pthread_mutex_t * mutex)
 {
+  int res = 0;
   switch (mutex->__m_kind) {
   case PTHREAD_MUTEX_ADAPTIVE_NP:
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      res = __pthread_unlock_pi(&mutex->__m_pi_lock, thread_self());
+    else
     __pthread_unlock(&mutex->__m_lock);
-    return 0;
+    return res;
+
   case PTHREAD_MUTEX_RECURSIVE_NP:
     if (mutex->__m_owner != thread_self())
       return EPERM;
@@ -197,18 +338,38 @@ __pthread_mutex_unlock(pthread_mutex_t * mutex)
       mutex->__m_count--;
       return 0;
     }
+    // Must reset owner BEFORE doing the unlock.
     mutex->__m_owner = NULL;
-    __pthread_unlock(&mutex->__m_lock);
-    return 0;
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      res = __pthread_unlock_pi(&mutex->__m_pi_lock, thread_self());
+    else
+      __pthread_unlock(&mutex->__m_lock);
+    if (res != 0)
+      // On failure, restore ownership.
+      mutex->__m_owner = thread_self();
+    return res;
+
   case PTHREAD_MUTEX_ERRORCHECK_NP:
     if (mutex->__m_owner != thread_self() || mutex->__m_lock.__status == 0)
       return EPERM;
+    // Must reset owner BEFORE doing the unlock.
     mutex->__m_owner = NULL;
-    __pthread_alt_unlock(&mutex->__m_lock);
-    return 0;
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      res = __pthread_unlock_pi(&mutex->__m_pi_lock, thread_self());
+    else
+      __pthread_alt_unlock(&mutex->__m_lock);
+    if (res != 0)
+      // On failure, restore ownership.
+      mutex->__m_owner = thread_self();
+    return res;
+
   case PTHREAD_MUTEX_TIMED_NP:
-    __pthread_alt_unlock(&mutex->__m_lock);
-    return 0;
+    if (mutex->__m_protocol == PTHREAD_PRIO_INHERIT)
+      res = __pthread_unlock_pi(&mutex->__m_pi_lock, thread_self());
+    else
+      __pthread_alt_unlock(&mutex->__m_lock);
+    return res;
+
   default:
     return EINVAL;
   }
@@ -220,6 +381,7 @@ L4_HIDDEN
 __pthread_mutexattr_init(pthread_mutexattr_t *attr)
 {
   attr->__mutexkind = PTHREAD_MUTEX_TIMED_NP;
+  attr->__mutexprotocol = PTHREAD_PRIO_NONE;
   return 0;
 }
 L4_STRONG_ALIAS(__pthread_mutexattr_init, pthread_mutexattr_init)
@@ -284,6 +446,53 @@ __pthread_mutexattr_setpshared (pthread_mutexattr_t *attr __attribute__((unused)
   return 0;
 }
 L4_WEAK_ALIAS(__pthread_mutexattr_setpshared, pthread_mutexattr_setpshared)
+
+
+/* Return in *PROTOCOL the mutex protocol attribute in *ATTR.  */
+int
+attribute_hidden
+__pthread_mutexattr_getprotocol (const pthread_mutexattr_t * __restrict attr,
+                                 int *__restrict protocol)
+{
+  *protocol = attr->__mutexprotocol;
+  return 0;
+}
+weak_alias(__pthread_mutexattr_getprotocol, pthread_mutexattr_getprotocol)
+
+/* Set the mutex protocol attribute in *ATTR to PROTOCOL (either
+   PTHREAD_PRIO_NONE, PTHREAD_PRIO_INHERIT, or PTHREAD_PRIO_PROTECT).  */
+int
+attribute_hidden
+__pthread_mutexattr_setprotocol (pthread_mutexattr_t *attr,
+            int protocol)
+{
+    if (protocol != PTHREAD_PRIO_NONE
+      && protocol != PTHREAD_PRIO_INHERIT)
+    return EINVAL;
+
+  attr->__mutexprotocol = protocol;
+  return 0;
+}
+weak_alias(__pthread_mutexattr_setprotocol, pthread_mutexattr_setprotocol)
+
+/* Return in *PRIOCEILING the mutex prioceiling attribute in *ATTR.  */
+int
+attribute_hidden
+__pthread_mutexattr_getprioceiling (const pthread_mutexattr_t * __restrict attr,
+                                    int *__restrict prioceiling)
+{
+  return EINVAL;
+}
+weak_alias(__pthread_mutexattr_getprioceiling, pthread_mutexattr_getprioceiling)
+
+/* Set the mutex prioceiling attribute in *ATTR to PRIOCEILING.  */
+int
+attribute_hidden
+__pthread_mutexattr_setprioceiling (pthread_mutexattr_t *attr, int prioceiling)
+{
+  return EINVAL;
+}
+weak_alias(__pthread_mutexattr_setprioceiling, pthread_mutexattr_setprioceiling)
 
 /* Once-only execution */
 

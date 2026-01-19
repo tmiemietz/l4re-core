@@ -19,7 +19,7 @@ include $(LIBCSRC_DIR)/make_vars.mk
 
 LDSODIR    = $(CONTRIB_DIR)/ldso/ldso
 
-SRC_CC_libc_pthread   = manager.cc l4.cc
+SRC_CC_libc_pthread   = manager.cc l4.cc pi_mutex_mem.cc
 SRC_C_libc_pthread   += spinlock.c mutex.c condvar.c rwlock.c specific.c \
                         semaphore.c attr.c barrier.c join.c pthread.c \
                         cancel.c signals.c \

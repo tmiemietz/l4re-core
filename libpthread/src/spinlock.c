@@ -14,6 +14,8 @@
 
 /* Internal locks */
 #include <l4/sys/kip.h>
+#include <l4/sys/pi_mutex.h>
+#include <l4/util/util.h>
 
 #include <errno.h>
 #include <sched.h>
@@ -426,6 +428,167 @@ void __pthread_alt_lock(struct _pthread_fastlock * lock,
 
   READ_MEMORY_BARRIER();
 #endif
+}
+
+static unsigned long _l4_thread_pi_mutex_owner(pthread_descr self)
+{
+  enum { FAST_PATH_OWNER_MASK = ~((1UL << L4_CAP_SHIFT) - 1) };
+
+  // Does not work for cap slot 0, but that is fine since the first cap slots
+  // are always reserved. Either by the kernel for sigma0/moe or by the loader
+  // for regular applications.
+  return self->p_th_cap & FAST_PATH_OWNER_MASK;
+}
+
+static bool __pthread_pi_fastlock_try_lock(struct _pthread_pi_fastlock *lock,
+                                           pthread_descr self)
+{
+  unsigned long old_status = 0;
+  return __atomic_compare_exchange_n(lock->status, &old_status,
+                                     _l4_thread_pi_mutex_owner(self), 0,
+                                     __ATOMIC_ACQUIRE, __ATOMIC_RELAXED);
+}
+
+static bool __pthread_pi_fastlock_try_unlock(struct _pthread_pi_fastlock *lock,
+                                             pthread_descr self)
+{
+  unsigned long old_status = _l4_thread_pi_mutex_owner(self);
+  return __atomic_compare_exchange_n(lock->status, &old_status, 0, 0,
+                                     __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+}
+
+int
+__pthread_lock_pi(struct _pthread_pi_fastlock *lock, pthread_descr self)
+{
+  // Mutex not initialized.
+  if (unlikely(lock->status == NULL))
+    return EINVAL;
+
+  if (__pthread_pi_fastlock_try_lock(lock, self))
+    return 0; // Acquired lock via fast path :)
+
+  // Lock is contended, fast path is blocked.
+  l4_ret_t err;
+  do
+    err = l4_error(l4_pi_mutex_lock(lock->pi_mutex, L4_IPC_NEVER));
+  while (err == -L4_EAGAIN || err == l4_ipc_to_errno(L4_IPC_RECANCELED));
+
+  if (err == -L4_EDEADLK)
+    return EDEADLK;
+
+  return err < 0 ? -err : 0;
+}
+
+int
+__pthread_lock_pi_deadlock(struct _pthread_pi_fastlock *lock,
+                           pthread_descr self)
+{
+  int res = __pthread_lock_pi(lock, self);
+  if (unlikely(res == EDEADLK))
+    l4_sleep_forever();
+  return res;
+}
+
+int __pthread_unlock_pi(struct _pthread_pi_fastlock *lock, pthread_descr self)
+{
+  // Mutex not initialized.
+  if (unlikely(lock->status == NULL))
+    return EINVAL;
+
+  if (__pthread_pi_fastlock_try_unlock(lock, self))
+    return 0; // Released lock via fast path :)
+
+  // Lock is contended, fast path is blocked.
+  l4_ret_t err;
+  do
+    err = l4_error(l4_pi_mutex_unlock(lock->pi_mutex));
+  while (err == -L4_EAGAIN);
+
+  if (err == -L4_EPERM)
+    return EPERM;
+
+  return err < 0 ? -err : 0;
+}
+
+int __pthread_trylock_pi(struct _pthread_pi_fastlock *lock, pthread_descr self)
+{
+  // Mutex not initialized.
+  if (unlikely(lock->status == NULL))
+    return EINVAL;
+
+  if (__pthread_pi_fastlock_try_lock(lock, self))
+    return 0; // Acquired lock
+
+  // TODO: This might be insufficient with dying threads. Because then trylock
+  // cannot simply check pi_lock->status, but must actually enter the kernel. Ah
+  // well, only relevant for robust mutexes. So fine for now!
+
+  return EBUSY;
+}
+
+static int
+__pthread_timedlock_pi_internal(struct _pthread_pi_fastlock *lock,
+                                pthread_descr self,
+                                const struct timespec *abstime,
+                                int report_deadlock)
+{
+  // Mutex not initialized.
+  if (unlikely(lock->status == NULL))
+    return EINVAL;
+
+  if (__pthread_pi_fastlock_try_lock(lock, self))
+    return 0; // Acquired lock via fast path :)
+
+  struct timespec realtime;
+  if (unlikely(clock_gettime(CLOCK_REALTIME, &realtime)))
+    return errno;
+
+  uint64_t realtime_us = realtime.tv_sec * 1000000ULL + realtime.tv_nsec / 1000;
+  uint64_t abstime_us = abstime->tv_sec * 1000000ULL + abstime->tv_nsec / 1000;
+  if (unlikely(realtime_us >= abstime_us))
+    return ETIMEDOUT;
+
+  // The timeout for pthread_mutex_timedlock() is based on the CLOCK_REALTIME,
+  // we need to map the timeout to the kernel clock. We do not account for RTC
+  // jumps while waiting in l4_pi_mutex_lock().
+  l4_cpu_time_t clock = l4_kip_clock(l4_kip()) + (abstime_us - realtime_us);
+  l4_timeout_t timeout = L4_IPC_NEVER;
+  l4_rcv_timeout(l4_timeout_abs_u(clock, 4, l4_utcb()), &timeout);
+
+  // Lock is contended, fast path is blocked.
+  l4_ret_t err;
+  do
+    err = l4_error(l4_pi_mutex_lock(lock->pi_mutex, timeout));
+  while (err == -L4_EAGAIN || err == l4_ipc_to_errno(L4_IPC_RECANCELED));
+
+  if(err == -L4_EDEADLK)
+    {
+      if (report_deadlock)
+        return EDEADLK;
+      l4_rcv_timeout(l4_timeout_abs_u(clock, 4, l4_utcb()), &timeout);
+      l4_ipc_sleep(timeout);
+      return ETIMEDOUT;
+    }
+
+  if (err == l4_ipc_to_errno(L4_IPC_RETIMEOUT))
+    return ETIMEDOUT;
+
+  return err < 0 ? -err : 0;
+}
+
+int
+__pthread_timedlock_pi(struct _pthread_pi_fastlock *lock, pthread_descr self,
+                       const struct timespec *abstime)
+{
+  return __pthread_timedlock_pi_internal(lock, self, abstime, 1);
+}
+
+int
+__pthread_timedlock_pi_deadlock(struct _pthread_pi_fastlock *lock,
+                                pthread_descr self,
+                                const struct timespec *abstime)
+{
+  return __pthread_timedlock_pi_internal(lock, self, abstime, 0);
 }
 
 /* Timed-out lock operation; returns 0 to indicate timeout. */

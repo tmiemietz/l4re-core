@@ -393,6 +393,15 @@ extern int __pthread_mutexattr_setpshared (pthread_mutexattr_t *__attr,
 					   int __pshared);
 extern int __pthread_mutexattr_gettype (const pthread_mutexattr_t *__attr,
 					int *__kind);
+extern int __pthread_mutexattr_getprotocol (const pthread_mutexattr_t *
+            __restrict __attr, int *__restrict __protocol);
+extern int __pthread_mutexattr_setprotocol (pthread_mutexattr_t *__attr,
+            int __protocol);
+extern int __pthread_mutexattr_getprioceiling (const pthread_mutexattr_t *
+               __restrict __attr, int *__restrict __prioceiling);
+extern int __pthread_mutexattr_setprioceiling (pthread_mutexattr_t *__attr,
+               int __prioceiling);
+
 extern void __pthread_kill_other_threads_np (void);
 extern int __pthread_mutex_init (pthread_mutex_t *__mutex,
 				 const pthread_mutexattr_t *__mutex_attr);

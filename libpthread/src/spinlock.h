@@ -121,6 +121,27 @@ static __inline__ int __pthread_trylock (struct _pthread_fastlock * lock)
 #endif
 }
 
+extern int __pthread_lock_pi(struct _pthread_pi_fastlock *lock,
+                             pthread_descr self);
+
+extern int __pthread_lock_pi_deadlock(struct _pthread_pi_fastlock *lock,
+                                      pthread_descr self);
+
+
+extern int __pthread_unlock_pi(struct _pthread_pi_fastlock *lock,
+                              pthread_descr self);
+
+extern int __pthread_trylock_pi(struct _pthread_pi_fastlock *lock,
+                                pthread_descr self);
+
+extern int __pthread_timedlock_pi(struct _pthread_pi_fastlock *lock,
+                                  pthread_descr self,
+                                  const struct timespec *abstime);
+
+extern int __pthread_timedlock_pi_deadlock(struct _pthread_pi_fastlock *lock,
+                                           pthread_descr self,
+                                           const struct timespec *abstime);
+
 /* Variation of internal lock used for pthread_mutex_t, supporting
    timed-out waits.  Warning: do not mix these operations with the above ones
    over the same lock object! */

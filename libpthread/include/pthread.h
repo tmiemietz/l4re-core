@@ -35,17 +35,27 @@ enum
 #include <l4/sys/compiler.h>
 L4_BEGIN_DECLS
 
+#ifdef __USE_UNIX98
+/* Mutex protocols.  */
+enum
+{
+  PTHREAD_PRIO_NONE,
+  PTHREAD_PRIO_INHERIT,
+  PTHREAD_PRIO_PROTECT
+};
+#endif
+
 /* Initializers.  */
 
 #define PTHREAD_MUTEX_INITIALIZER \
-  {0, 0, 0, PTHREAD_MUTEX_TIMED_NP, __LOCK_INITIALIZER}
+  {0, 0, 0, PTHREAD_MUTEX_TIMED_NP, PTHREAD_PRIO_NONE, {__LOCK_INITIALIZER} }
 #ifdef __USE_GNU
 # define PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP \
-  {0, 0, 0, PTHREAD_MUTEX_RECURSIVE_NP, __LOCK_INITIALIZER}
+  {0, 0, 0, PTHREAD_MUTEX_RECURSIVE_NP, PTHREAD_PRIO_NONE, {__LOCK_INITIALIZER} }
 # define PTHREAD_ERRORCHECK_MUTEX_INITIALIZER_NP \
-  {0, 0, 0, PTHREAD_MUTEX_ERRORCHECK_NP, __LOCK_INITIALIZER}
+  {0, 0, 0, PTHREAD_MUTEX_ERRORCHECK_NP, PTHREAD_PRIO_NONE, {__LOCK_INITIALIZER} }
 # define PTHREAD_ADAPTIVE_MUTEX_INITIALIZER_NP \
-  {0, 0, 0, PTHREAD_MUTEX_ADAPTIVE_NP, __LOCK_INITIALIZER}
+  {0, 0, 0, PTHREAD_MUTEX_ADAPTIVE_NP, PTHREAD_PRIO_NONE, {__LOCK_INITIALIZER} }
 #endif
 
 #define PTHREAD_COND_INITIALIZER {__LOCK_INITIALIZER, 0, "", 0}
@@ -384,6 +394,28 @@ extern int pthread_mutexattr_gettype (const pthread_mutexattr_t *__restrict
 				      __attr, int *__restrict __kind) __THROW;
 #endif
 
+/* Return in *PROTOCOL the mutex protocol attribute in *ATTR.  */
+extern int pthread_mutexattr_getprotocol (const pthread_mutexattr_t *
+            __restrict __attr,
+            int *__restrict __protocol)
+     __THROW __nonnull ((1, 2));
+
+/* Set the mutex protocol attribute in *ATTR to PROTOCOL (either
+   PTHREAD_PRIO_NONE, PTHREAD_PRIO_INHERIT, or PTHREAD_PRIO_PROTECT).  */
+extern int pthread_mutexattr_setprotocol (pthread_mutexattr_t *__attr,
+            int __protocol)
+     __THROW __nonnull ((1));
+
+/* Return in *PRIOCEILING the mutex prioceiling attribute in *ATTR.  */
+extern int pthread_mutexattr_getprioceiling (const pthread_mutexattr_t *
+               __restrict __attr,
+               int *__restrict __prioceiling)
+     __THROW __nonnull ((1, 2));
+
+/* Set the mutex prioceiling attribute in *ATTR to PRIOCEILING.  */
+extern int pthread_mutexattr_setprioceiling (pthread_mutexattr_t *__attr,
+               int __prioceiling)
+     __THROW __nonnull ((1));
 
 /* Functions for handling conditional variables.  */
 
