@@ -47,6 +47,7 @@ enum l4_error_code_t
   L4_EINVAL        = 22,     /**< Invalid argument. */
   L4_ENOSPC        = 28,     /**< No space left on device */
   L4_ERANGE        = 34,     /**< Range error. */
+  L4_EDEADLK       = 35,     /**< Deadlock would occur. */
   L4_ENAMETOOLONG  = 36,     /**< Name too long. */
   L4_ENOSYS        = 38,     /**< No sys. */
   L4_EBADPROTO     = 39,     /**< Unsupported protocol. */
