@@ -312,6 +312,36 @@ l4_factory_create_thread_group(l4_cap_idx_t factory,
                                unsigned policy) L4_NOTHROW;
 
 /**
+ * \ingroup l4_factory_api
+ * Create a new priority inheritance mutex.
+ *
+ * The priority inheritance mutex is bound to the specified task.
+ *
+ * \param      factory     Capability selector for factory to use for creation.
+ * \param[out] target_cap  The kernel stores the new mutex's capability into
+ *                         this slot.
+ * \param      ku_status   Address of mutex status field in kernel-user memory
+ *                         of specified task.
+ * \param      task_cap    Task the mutex gets bound to.
+ *
+ * \return Syscall return tag
+ *
+ * \retval L4_EOK      No error occurred.
+ * \retval -L4_ENOMEM  Out-of-memory during allocation of the mutex object.
+ * \retval -L4_EINVAL  Invalid ku_status or task_cap parameter.
+ * \retval -L4_EPERM   Insufficient permissions; see precondition.
+ * \retval -L4_ENODEV  Priority inheritance mutexes not supported.
+ *
+ * \pre The capabilities `factory` and `task_cap` must have the
+ *      permission #L4_CAP_FPAGE_S.
+ *
+ * \see \ref l4_pi_mutex_api
+ */
+L4_INLINE l4_msgtag_t
+l4_factory_create_pi_mutex(l4_cap_idx_t factory, l4_cap_idx_t target_cap,
+                           l4_addr_t ku_status, l4_cap_idx_t task_cap) L4_NOTHROW;
+
+/**
  * \internal
  * \ingroup l4_factory_api
  */
@@ -337,6 +367,15 @@ l4_factory_create_thread_group_u(l4_cap_idx_t factory,
                                  l4_cap_idx_t target_cap,
                                  unsigned policy,
                                  l4_utcb_t *u) L4_NOTHROW;
+
+/**
+ * \internal
+ * \ingroup l4_factory_api
+ */
+L4_INLINE l4_msgtag_t
+l4_factory_create_pi_mutex_u(l4_cap_idx_t factory, l4_cap_idx_t target_cap,
+                             l4_addr_t ku_status, l4_cap_idx_t task_cap,
+                             l4_utcb_t *u) L4_NOTHROW;
 
 /**
  * \internal
@@ -526,6 +565,21 @@ l4_factory_create_thread_group_u(l4_cap_idx_t factory,
   return l4_factory_create_commit_u(factory, t, u);
 }
 
+L4_INLINE l4_msgtag_t
+l4_factory_create_pi_mutex_u(l4_cap_idx_t factory, l4_cap_idx_t target_cap,
+                             l4_addr_t ku_status, l4_cap_idx_t task_cap,
+                             l4_utcb_t *u) L4_NOTHROW
+{
+  l4_msgtag_t t;
+  l4_msg_regs_t *v;
+  t = l4_factory_create_start_u(L4_PROTO_PI_MUTEX, target_cap, u);
+  l4_factory_create_add_uint_u(ku_status, &t, u);
+  v = l4_utcb_mr_u(u);
+  v->mr[l4_msgtag_words(t)] = l4_map_obj_control(0,0);
+  v->mr[l4_msgtag_words(t) + 1] = l4_obj_fpage(task_cap, 0, L4_CAP_FPAGE_RS).raw;
+  t = l4_msgtag(l4_msgtag_label(t), l4_msgtag_words(t), 1, l4_msgtag_flags(t));
+  return l4_factory_create_commit_u(factory, t, u);
+}
 
 L4_INLINE l4_msgtag_t
 l4_factory_create_task(l4_cap_idx_t factory,
@@ -586,6 +640,14 @@ l4_factory_create_thread_group(l4_cap_idx_t factory,
   return l4_factory_create_thread_group_u(factory, target_cap, policy, l4_utcb());
 }
 
+L4_INLINE l4_msgtag_t
+l4_factory_create_pi_mutex(l4_cap_idx_t factory, l4_cap_idx_t target_cap,
+                           l4_addr_t ku_status,
+                           l4_cap_idx_t task_cap) L4_NOTHROW
+{
+  return l4_factory_create_pi_mutex_u(factory, target_cap, ku_status, task_cap,
+                                      l4_utcb());
+}
 
 L4_INLINE l4_msgtag_t
 l4_factory_create_start_u(long obj, l4_cap_idx_t target_cap,

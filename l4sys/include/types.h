@@ -80,6 +80,7 @@ enum L4_msgtag_protocol
   L4_PROTO_DEBUGGER      = -23L, ///< Protocol ID for the debugger
   L4_PROTO_SMCCC         = -24L, ///< Protocol ID for ARM SMCCC calls
   L4_PROTO_VCPU_CONTEXT  = -25L, ///< Protocol for hardware vCPU contexts
+  L4_PROTO_PI_MUTEX      = -26L, ///< Protocol for priority inheritance mutex
 };
 
 enum L4_varg_type
