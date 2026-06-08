@@ -120,6 +120,25 @@ size_t Tracebuffer::dequeue(Item *items, size_t capacity, size_t burst,
   return _buffer.dequeue(items, capacity, burst, policy, yield, drops);
 }
 
+std::optional<Tracebuffer::Id> Tracebuffer::ptr_to_id(void *const ptr)
+{
+  auto id = _jdb->kobj_to_id(reinterpret_cast<l4_addr_t>(ptr));
+  if (id == ~0UL)
+    return std::nullopt;
+
+  return id;
+}
+
+std::optional<std::string> Tracebuffer::id_to_name(Tracebuffer::Id const id)
+{
+  std::array<char, string_buffer_size> name;
+  auto res = _jdb->query_object_name(id, name.data(), name.size());
+  if (res != 0)
+    return std::nullopt;
+
+  return name.data();
+}
+
 Tracebuffer::Factory::Factory()
 {
   _fpage_status = reserve(L4_PAGESIZE);

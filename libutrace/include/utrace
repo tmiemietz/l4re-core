@@ -52,6 +52,8 @@ public:
   using Status = Buffer::Status;
   using Slot = Buffer::Slot;
 
+  using Id = unsigned long;
+
   static_assert(sizeof(Status) <= L4_PAGESIZE);
 
   /// Mapping of the dynamic tracebuffer log indexes to names.
@@ -128,6 +130,32 @@ public:
    */
   size_t dequeue(Item *items, size_t capacity, size_t burst, Drop_policy policy,
                  Sequence *drops = nullptr);
+
+  /**
+   * Convert kernel object pointer to global kernel object ID.
+   *
+   * Some tracebuffer items contain kernel object pointers that can be
+   * converted to global kernel object IDs.
+   *
+   * \param ptr  Kernel object pointer.
+   *
+   * \return Global kernel object ID.
+   * \retval std::nullopt  No mapping to global kernel object ID was found.
+   */
+  static std::optional<Id> ptr_to_id(void *const ptr);
+
+  /**
+   * Convert global kernel object ID to object name.
+   *
+   * Some tracebuffer items contain global kernel object IDs that can be
+   * associated with human-readable object names.
+   *
+   * \param id  Global kernel object ID.
+   *
+   * \return Object name.
+   * \retval std::nullopt  No object name was found.
+   */
+  static std::optional<std::string> id_to_name(Id const id);
 
 private:
   static constexpr unsigned tracebuffer_version = 0;
