@@ -3,6 +3,9 @@
 [comment]: # (This is a generated file. Do not change it.)
 [comment]: # (Instead, change capdb.yml.)
 
+
+## Description {#l4re_servers_moe_description}
+
 Moe is the default root-task implementation for L4Re-based systems.
 
 *Moe* is the first task which is usually started in L4Re-based systems. The
@@ -70,7 +73,8 @@ module somemodule :rw
 > corresponding cap also needs write permissions.
 
 
-## Capabilities
+<hr>
+## Capabilities {#l4re_servers_moe_capabilities}
 
 * `svr`
 
@@ -79,7 +83,8 @@ module somemodule :rw
   Mandatory capability.
 
 
-## Command Line Options
+<hr>
+## Command Line Options {#l4re_servers_moe_cmdline_options}
 
 * `--debug=<flags>`
 
@@ -148,7 +153,7 @@ module somemodule :rw
   All command-line parameters after the special `--` option are passed directly
   to the init process.
 
-## Namespace
+## Namespace {#l4re_servers_moe_param_namespace}
 
 Call:   `create(L4.Proto.Namespace)`
 
@@ -156,7 +161,7 @@ Call:   `create(L4.Proto.Namespace)`
 
 
 
-## Dataspace
+## Dataspace {#l4re_servers_moe_param_dataspace}
 
 Dataspaces can be allocated with an arbitrary size. The granularity for memory
 allocation however is the machine page size (#L4_PAGESIZE). A dataspace user
@@ -203,7 +208,7 @@ Call:   `create(L4.Proto.Dataspace, size [, flags, align])`
 
 
 
-## DMA space
+## DMA space {#l4re_servers_moe_param_dma_space}
 
 Call:   `create(L4.Proto.Dma_space)`
 
@@ -211,7 +216,7 @@ Call:   `create(L4.Proto.Dma_space)`
 
 
 
-## Region Map
+## Region Map {#l4re_servers_moe_param_region_map}
 
 Call:   `create(L4.Proto.Rm)`
 
@@ -219,7 +224,7 @@ Call:   `create(L4.Proto.Rm)`
 
 
 
-## Virtual console
+## Virtual console {#l4re_servers_moe_param_virtual_console}
 
 The logging facility of Moe provides per application tagged and synchronized log
 output.
@@ -286,7 +291,7 @@ Call:   `create(L4.Proto.Log [, label, "color=(string|int)"])`
 
 
 
-## Scheduler
+## Scheduler {#l4re_servers_moe_param_scheduler}
 
 The scheduler subsystem provides a simple scheduler proxy for scheduling policy
 enforcement.
@@ -318,7 +323,7 @@ Call:   `create(L4.Proto.Scheduler, limit, offset [, bitmap])`
 
 
 
-## Factory
+## Factory {#l4re_servers_moe_param_factory}
 
 Call:   `create(L4.Proto.Factory [, quota])`
 
