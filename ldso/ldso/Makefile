@@ -15,6 +15,8 @@ ifeq ($(CONFIG_L4_LIBC),uclibc-ng)
 TARGET := libld-l4.so
 SOVERSION = 1
 
+PC_LIBS := --as-needed -lld-l4
+
 vpath %.c $(CON_DIR)/ldso
 vpath %.S $(CON_DIR)/ldso/$(LIBC_ARCH)
 vpath aeabi_read_tp-v6p.S     $(LIBCSRC_DIR)/libc/ARCH-arm
