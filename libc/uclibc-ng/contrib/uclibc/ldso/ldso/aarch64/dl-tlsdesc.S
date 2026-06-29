@@ -33,6 +33,7 @@
 #define PTR_LOG_SIZE            3
 #define PTR_SIZE        (1<<PTR_LOG_SIZE)
 
+#ifdef __UCLIBC_HAS_FPU__
 #define NSAVEDQREGPAIRS	16
 #define SAVE_Q_REGISTERS				\
 	stp	q0, q1,	[sp, #-32*NSAVEDQREGPAIRS]!;	\
@@ -71,6 +72,10 @@
 	ldp	q30, q31, [sp, #32*15];			\
 	ldp	 q0,  q1, [sp], #32*NSAVEDQREGPAIRS;	\
 	cfi_adjust_cfa_offset (-32*NSAVEDQREGPAIRS);
+#else
+#define SAVE_Q_REGISTERS
+#define RESTORE_Q_REGISTERS
+#endif
 
 	.text
 

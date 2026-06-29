@@ -43,6 +43,7 @@ _dl_linux_resolve:
          .cfi_rel_offset x0, 64
          .cfi_rel_offset x1, 72
 
+#ifdef __UCLIBC_HAS_FPU__
          stp     q0, q1, [sp, #(80+0*16)]
          .cfi_rel_offset q0, 80+0*16
          .cfi_rel_offset q1, 80+1*16
@@ -58,6 +59,7 @@ _dl_linux_resolve:
          stp     q6, q7, [sp, #(80+6*16)]
          .cfi_rel_offset q0, 80+6*16
          .cfi_rel_offset q1, 80+7*16
+#endif
 
          /* Get pointer to linker struct.  */
          ldr     x0, [ip0, #-8]
@@ -78,10 +80,12 @@ _dl_linux_resolve:
          mov     ip0, x0
 
          /* Get arguments and return address back.  */
+#ifdef __UCLIBC_HAS_FPU__
          ldp     q0, q1, [sp, #(80+0*16)]
          ldp     q2, q3, [sp, #(80+2*16)]
          ldp     q4, q5, [sp, #(80+4*16)]
          ldp     q6, q7, [sp, #(80+6*16)]
+#endif
          ldp     x0, x1, [sp, #64]
          ldp     x2, x3, [sp, #48]
          ldp     x4, x5, [sp, #32]
@@ -102,6 +106,7 @@ _dl_linux_resolve:
 
 #define NSAVED_QREG_PAIRS 16
 .macro save_q_regs
+#ifdef __UCLIBC_HAS_FPU__
         stp	q0, q1,	[sp, #-32*NSAVED_QREG_PAIRS]!
         .cfi_adjust_cfa_offset 32 * NSAVED_QREG_PAIRS
         stp	 q2,  q3, [sp, #32*1]
@@ -119,9 +124,11 @@ _dl_linux_resolve:
         stp	q26, q27, [sp, #32*13]
         stp	q28, q29, [sp, #32*14]
         stp	q30, q31, [sp, #32*15]
+#endif
 .endm
 
 .macro restore_q_regs
+#ifdef __UCLIBC_HAS_FPU__
         ldp	 q2,  q3, [sp, #32*1]
         ldp	 q4,  q5, [sp, #32*2]
         ldp	 q6,  q7, [sp, #32*3]
@@ -139,6 +146,7 @@ _dl_linux_resolve:
         ldp	q30, q31, [sp, #32*15]
         ldp	 q0,  q1, [sp], #32 * NSAVED_QREG_PAIRS
         .cfi_adjust_cfa_offset -32 * NSAVED_QREG_PAIRS
+#endif
 .endm
 
 
