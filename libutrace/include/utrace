@@ -35,6 +35,12 @@
 
 namespace utrace {
 
+/// Size of static string log name buffers.
+static constexpr size_t log_name_buffer_size = 64U;
+
+/// Size of static string object name buffers.
+static constexpr size_t object_name_buffer_size = 16U;
+
 /**
  * Tracebuffer abstraction.
  *

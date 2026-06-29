@@ -58,8 +58,8 @@ std::endian Tracebuffer::endianness()
 
 std::optional<Tracebuffer::Index_desc> Tracebuffer::index(unsigned idx)
 {
-  std::array<char, string_buffer_size> name;
-  std::array<char, string_buffer_size> shortname;
+  std::array<char, log_name_buffer_size> name;
+  std::array<char, log_name_buffer_size> shortname;
 
   auto ret = _jdb->query_log_name(idx, name.data(), name.size(),
                                   shortname.data(), shortname.size());
@@ -131,7 +131,7 @@ std::optional<Tracebuffer::Id> Tracebuffer::ptr_to_id(void *const ptr)
 
 std::optional<std::string> Tracebuffer::id_to_name(Tracebuffer::Id const id)
 {
-  std::array<char, string_buffer_size> name;
+  std::array<char, object_name_buffer_size> name;
   auto res = _jdb->query_object_name(id, name.data(), name.size());
   if (res != 0)
     return std::nullopt;

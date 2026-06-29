@@ -51,9 +51,6 @@ static_assert(stable_cache_alignment >= __GCC_DESTRUCTIVE_SIZE,
               "Stable cache alignment not sufficient");
 #endif // __GCC_DESTRUCTIVE_SIZE
 
-/// Size of static string buffers.
-static constexpr size_t string_buffer_size = 1024U;
-
 /**
  * Ring buffer.
  *
