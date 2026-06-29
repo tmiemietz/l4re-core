@@ -2,6 +2,7 @@
 /**
  * \file
  * Common L4 ABI Data Types.
+ * \hideincludedbygraph
  * \ingroup l4_api
  */
 /*
