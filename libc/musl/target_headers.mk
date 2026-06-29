@@ -54,6 +54,7 @@ define HDR_common
   net/if.h
   netdb.h
   netinet/in.h
+  netinet/ip.h
   netinet/tcp.h
   nl_types.h
   paths.h
