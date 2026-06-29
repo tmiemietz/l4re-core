@@ -804,6 +804,7 @@ define SRC_network
   ntohl
   htonl
   htons
+  inet_aton
   inet_pton
   inet_ntop
 endef
