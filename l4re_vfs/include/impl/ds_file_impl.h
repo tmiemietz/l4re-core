@@ -40,6 +40,12 @@ Ds_file::fstat(struct stat64 *buf) const noexcept
 ssize_t
 Ds_file::read_single(const struct iovec *vec, off64_t pos) noexcept
 {
+  // POSIX declares read operations with a length > SSIZE_MAX to not be
+  // portable, so we do not have to support them. This check also ensures that
+  // casting the size_t variable vec->iov_len to an ssize_t does not overflow.
+  if (vec->iov_len > SSIZE_MAX)
+    return -EINVAL;
+
   off64_t l = vec->iov_len;
   if (_size - pos < l)
     l = _size - pos;
@@ -56,6 +62,9 @@ Ds_file::read_single(const struct iovec *vec, off64_t pos) noexcept
 ssize_t
 Ds_file::preadv(const struct iovec *vec, int cnt, off64_t offset) noexcept
 {
+  if (cnt < 0 || offset < 0)
+    return -EINVAL;
+
   if (!_size)
     return 0;
 
@@ -86,8 +95,14 @@ Ds_file::preadv(const struct iovec *vec, int cnt, off64_t offset) noexcept
   while (cnt > 0)
     {
       ssize_t r = read_single(vec, offset);
+
+      // This check also ensures that casting r to a size_t does not cause
+      // overflows if r is negative.
+      if (r < 0)
+        return (l == 0) ? r : l;
+
       offset += r;
-      l += r;
+      l      += r;
 
       if (static_cast<size_t>(r) < vec->iov_len)
         return l;
